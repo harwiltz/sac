@@ -70,11 +70,20 @@ class SACAgent:
                     self._training = True
             if self._training:
                 losses = self.update()
-                artifacts = {'loss': losses,
-                             'step': self._total_steps,
-                             'episode': num_episodes,
-                             'done': d,
-                             'return': episode_reward}
+                artifacts = {
+                    'loss': losses,
+                     'step': self._total_steps,
+                     'episode': num_episodes,
+                     'done': d,
+                     'return': episode_reward,
+                     'transition': {
+                         'state': s,
+                         'action': a,
+                         'reward': r,
+                         'next state': ns,
+                         'done': d,
+                     }
+                }
                 if visualizer is not None:
                     visualizer(artifacts)
             if d:

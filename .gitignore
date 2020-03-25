@@ -1,3 +1,6 @@
 **/*.swp
 **/*.out
 **/__pycache__
+**/runs
+**/data
+**/venv
