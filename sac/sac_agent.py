@@ -49,11 +49,14 @@ class SACAgent:
         self._critic1_optimizer = torch.optim.Adam(self._critic1.parameters(), lr=critic_lr)
         self._critic2_optimizer = torch.optim.Adam(self._critic2.parameters(), lr=critic_lr)
 
-    def train(self, num_steps, visualizer=None):
+    def train(self, num_steps, win_condition=None, win_window=5, visualizer=None):
         env = self._env_fn()
         s = env.reset()
         episode_reward = 0
         num_episodes = 0
+        if win_condition is not None:
+            scores = [0. for _ in range(win_window)]
+            idx = 0
         for i in range(num_steps):
             s_t = torch.FloatTensor(s).to(device).unsqueeze(0)
             if self._training:
@@ -89,6 +92,12 @@ class SACAgent:
             if d:
                 s = env.reset()
                 num_episodes += 1
+                if win_condition is not None:
+                    scores[idx] = episode_reward
+                    idx = (idx + 1) % win_window
+                    if (num_episodes >= win_window) and (np.mean(scores) >= win_condition):
+                        print("SAC finished training: win condition reached")
+                        break
                 episode_reward = 0
             else:
                 s = ns
@@ -106,8 +115,8 @@ class SACAgent:
         sampled_q2 = self._critic2(s, sampled_actions).squeeze()
         sampled_q = torch.min(sampled_q1, sampled_q2)
 
-        values = self._value_net(s)
-        value_targets = sampled_q - log_probs
+        values = (self._value_net(s)).squeeze()
+        value_targets = (sampled_q - log_probs).squeeze()
         value_loss = F.mse_loss(values, value_targets.detach())
         self._value_optimizer.zero_grad()
         value_loss.backward()
