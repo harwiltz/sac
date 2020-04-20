@@ -1,0 +1,11 @@
+agent:
+  cls: sac.SACAgent
+  params:
+    env: LunarLanderContinuous-v2
+    batch_size: 128
+    hidden_size: 256
+    value_delay: 2
+
+training:
+  episodes: 80000
+  preview: True

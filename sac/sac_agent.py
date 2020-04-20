@@ -7,12 +7,13 @@ import torch.nn.functional as F
 from sac.nets import GaussianActorNetwork, DiscreteActorNetwork
 from sac.nets import CriticNetwork, ValueNetwork
 from sac.replay import ReplayBuffer
+from sac.utils import default_cli_logger
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class SACAgent:
     def __init__(self,
-                 env_fn,
+                 env,
                  pre_train_steps=1000,
                  max_replay_capacity=10000,
                  actor_lr=3e-4,
@@ -24,12 +25,13 @@ class SACAgent:
                  hidden_size=256,
                  value_delay=1):
         self._total_steps = 0
-        self._env_fn = env_fn
+        self._env_name = env
+        self._env_fn = lambda: gym.make(self._env_name)
         self._tau = tau
         self._gamma = gamma
         self._batch_size = batch_size
         self._value_delay = value_delay
-        env = env_fn()
+        env = self._env_fn()
 
         self._pre_train_steps = pre_train_steps
         self._training = False
@@ -67,7 +69,7 @@ class SACAgent:
         self._critic1_optimizer = torch.optim.Adam(self._critic1.parameters(), lr=critic_lr)
         self._critic2_optimizer = torch.optim.Adam(self._critic2.parameters(), lr=critic_lr)
 
-    def rollout(self, num_rollouts):
+    def rollout(self, num_rollouts=1, render=False):
         rewards = np.zeros(num_rollouts)
         for i in range(num_rollouts):
             env = self._env_fn()
@@ -75,17 +77,17 @@ class SACAgent:
             episode_reward = 0
             done = False
             while not done:
-                s_t = torch.from_numpy(s).float().to(device).unsqueeze(0)
-                a, _ = self._actor(s_t)
-                a = a.squeeze().detach().cpu().numpy()
-                if self._discrete_actions:
-                    a = int(a.item())
+                if render:
+                    env.render()
+                a = self.action(s)
                 s, r, done, _ = env.step(a)
                 episode_reward += r
             rewards[i] = episode_reward
+        if render:
+            env.close()
         return rewards
 
-    def train(self, num_steps, win_condition=None, win_window=5, visualizer=None):
+    def train(self, num_steps, win_condition=None, win_window=5, logger=default_cli_logger):
         env = self._env_fn()
         s = env.reset()
         episode_reward = 0
@@ -94,12 +96,8 @@ class SACAgent:
             scores = [0. for _ in range(win_window)]
             idx = 0
         for i in range(num_steps):
-            s_t = torch.from_numpy(s).float().to(device).unsqueeze(0)
             if self._training:
-                a, _ = self._actor(s_t)
-                a = a.squeeze().detach().cpu().numpy()
-                if self._discrete_actions:
-                    a = int(a.item())
+                a = self.action(s)
             else:
                 a = env.action_space.sample()
             ns, r, d, _ = env.step(a)
@@ -128,8 +126,8 @@ class SACAgent:
                          'done': d,
                      }
                 }
-                if visualizer is not None:
-                    visualizer(artifacts)
+                if logger is not None:
+                    logger(self, artifacts)
             if d:
                 s = env.reset()
                 num_episodes += 1
