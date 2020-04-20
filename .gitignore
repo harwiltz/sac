@@ -5,3 +5,6 @@
 **/data
 **/venv
 **/outputs
+**/build
+**/dist
+**/*.egg-info
