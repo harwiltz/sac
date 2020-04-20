@@ -36,6 +36,19 @@ class CriticNetwork(ValueNetwork):
         x = torch.cat([s, a], dim=1)
         return ValueNetwork.forward(self, x)
 
+class DiscreteCriticNetwork(nn.Module):
+    def __init__(self, obs_dim, act_dim, hidden_size=256):
+        super(DiscreteCriticNetwork, self).__init__()
+        self._l1 = nn.Linear(obs_dim, hidden_size)
+        self._l2 = nn.Linear(hidden_size, hidden_size)
+        self._l3 = nn.Linear(hidden_size, act_dim)
+
+    def forward(self, s, a):
+        s = F.relu(self._l1(s))
+        s = F.relu(self._l2(s))
+        s = self._l3(s)
+        return s.gather(1, a.long())
+
 class ActorNetwork(nn.Module):
     def __init__(self, obs_dim, hidden_size=256):
         super(ActorNetwork, self).__init__()
@@ -92,7 +105,7 @@ class DiscreteActorNetwork(ActorNetwork):
     def __init__(self,
                  obs_dim,
                  act_dim,
-                 temperature=1,
+                 temperature=1e-5,
                  hidden_size=256):
         super(DiscreteActorNetwork, self).__init__(obs_dim, hidden_size=hidden_size)
         self._logits_layer = nn.Linear(self._hidden_size, act_dim)
@@ -105,7 +118,7 @@ class DiscreteActorNetwork(ActorNetwork):
         one_hot_action = F.gumbel_softmax(dist.logits, tau=self._temperature, hard=True)
         action = one_hot_action @ self._action_indices
         logprobs = dist.log_prob(action)
-        return action, logprobs
+        return action.unsqueeze(-1), logprobs
 
     def policy(self, x):
         x = ActorNetwork.forward(self, x)

@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 
 from sac.nets import GaussianActorNetwork, DiscreteActorNetwork
-from sac.nets import CriticNetwork, ValueNetwork
+from sac.nets import CriticNetwork, DiscreteCriticNetwork, ValueNetwork
 from sac.replay import ReplayBuffer
 from sac.utils import default_cli_logger
 
@@ -58,9 +58,15 @@ class SACAgent:
         else:
             raise NotImplementedError("Unsupported action space type: {}".format(env.action_space))
 
-        self._replay_buf = ReplayBuffer(self._obs_dim, self._act_dim, max_replay_capacity)
-        self._critic1 = CriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
-        self._critic2 = CriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+        if self._discrete_actions:
+            self._replay_buf = ReplayBuffer(self._obs_dim, 1, max_replay_capacity)
+            self._critic1 = DiscreteCriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+            self._critic2 = DiscreteCriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+        else:
+            self._replay_buf = ReplayBuffer(self._obs_dim, self._act_dim, max_replay_capacity)
+            self._critic1 = CriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+            self._critic2 = CriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+
         self._value_net = ValueNetwork(self._obs_dim, hidden_size=hidden_size).to(device)
         self._target_value_net = copy.deepcopy(self._value_net).to(device)
 
@@ -102,10 +108,7 @@ class SACAgent:
                 a = env.action_space.sample()
             ns, r, d, _ = env.step(a)
             episode_reward += r
-            if self._discrete_actions:
-                self._replay_buf.store(s, np.eye(self._act_dim)[int(a)], r, ns, d)
-            else:
-                self._replay_buf.store(s, a, r, ns, d)
+            self._replay_buf.store(s, a, r, ns, d)
             self._total_steps += 1
             if not self._training:
                 if self._total_steps >= self._pre_train_steps:
@@ -150,8 +153,6 @@ class SACAgent:
         d = torch.from_numpy(d).float().to(device)
 
         sampled_actions, log_probs = self._actor(s)
-        if self._discrete_actions:
-            sampled_actions = torch.eye(self._act_dim)[sampled_actions.long()]
         sampled_q1 = self._critic1(s, sampled_actions).squeeze()
         sampled_q2 = self._critic2(s, sampled_actions).squeeze()
         sampled_q = torch.min(sampled_q1, sampled_q2)
