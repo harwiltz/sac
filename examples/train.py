@@ -7,7 +7,7 @@ from sac import SACAgent
 @hydra.main(config_path='config.yaml')
 def main(cfg):
     agent = hydra.utils.instantiate(cfg.agent)
-    agent.train(cfg.training.episodes)
+    agent.train(cfg.training.steps)
 
     if cfg.training.preview:
         while True:
