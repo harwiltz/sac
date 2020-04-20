@@ -1,4 +1,5 @@
 import gym
+import numpy as np
 
 from sac import SACAgent
 
@@ -6,7 +7,15 @@ agent = SACAgent(lambda: gym.make('LunarLanderContinuous-v2'), value_delay=2)
 
 def visualize(artifacts):
     if artifacts['done']:
-        print("[D] Episode {} score: {}".format(artifacts['episode'], artifacts['return']))
+        if artifacts['episode'] % 10 == 0:
+            print("=" * 65)
+            results = agent.rollout(10)
+            mean = np.mean(results)
+            _min = np.min(results)
+            _max = np.max(results)
+            fmt = "Ep {:>4} | Mean: {:>8.2f} | Min: {:>8.2f} | Max: {:>8.2f}"
+            print(fmt.format(artifacts['episode'], mean, _min, _max))
+            print("=" * 65)
     step = artifacts['step']
     if step % 1000 == 0:
         critic_loss = 0.5 * (artifacts['loss']['critic1'] + artifacts['loss']['critic2'])
@@ -28,7 +37,7 @@ def watch_demo(agent):
     env.close()
     print("Score: {}".format(score))
 
-agent.train(20000, visualizer=visualize)
+agent.train(80000, visualizer=visualize)
 
 while True:
     input("Press ENTER to view demo...")

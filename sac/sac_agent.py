@@ -1,9 +1,11 @@
 import copy
+import gym
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from sac.nets import ActorNetwork, CriticNetwork, ValueNetwork
+from sac.nets import GaussianActorNetwork, DiscreteActorNetwork
+from sac.nets import CriticNetwork, ValueNetwork
 from sac.replay import ReplayBuffer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -16,9 +18,10 @@ class SACAgent:
                  actor_lr=3e-4,
                  critic_lr=3e-4,
                  tau=5e-3,
-                 gamma=0.99,
+                 gamma=0.999,
                  alpha=1.0,
                  batch_size=32,
+                 hidden_size=256,
                  value_delay=1):
         self._total_steps = 0
         self._env_fn = env_fn
@@ -32,22 +35,55 @@ class SACAgent:
         self._training = False
 
         self._obs_dim = np.prod(env.observation_space.shape)
-        self._act_dim = np.prod(env.action_space.shape)
-        act_high = env.action_space.high
-        act_low = env.action_space.low
+
+        self._discrete_actions = False
+
+        if isinstance(env.action_space, gym.spaces.Discrete):
+            self._act_dim = env.action_space.n
+            self._actor = DiscreteActorNetwork(self._obs_dim,
+                                               self._act_dim,
+                                               hidden_size=hidden_size).to(device)
+            self._discrete_actions = True
+        elif isinstance(env.action_space, gym.spaces.Box):
+            self._act_dim = np.prod(env.action_space.shape)
+            act_high = env.action_space.high
+            act_low = env.action_space.low
+            self._actor = GaussianActorNetwork(self._obs_dim,
+                                               self._act_dim,
+                                               act_low,
+                                               act_high,
+                                               hidden_size=hidden_size).to(device)
+        else:
+            raise NotImplementedError("Unsupported action space type: {}".format(env.action_space))
 
         self._replay_buf = ReplayBuffer(self._obs_dim, self._act_dim, max_replay_capacity)
-
-        self._actor = ActorNetwork(self._obs_dim, self._act_dim, act_low, act_high).to(device)
-        self._critic1 = CriticNetwork(self._obs_dim, self._act_dim).to(device)
-        self._critic2 = CriticNetwork(self._obs_dim, self._act_dim).to(device)
-        self._value_net = ValueNetwork(self._obs_dim).to(device)
+        self._critic1 = CriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+        self._critic2 = CriticNetwork(self._obs_dim, self._act_dim, hidden_size=hidden_size).to(device)
+        self._value_net = ValueNetwork(self._obs_dim, hidden_size=hidden_size).to(device)
         self._target_value_net = copy.deepcopy(self._value_net).to(device)
 
         self._actor_optimizer = torch.optim.Adam(self._actor.parameters(), lr=actor_lr)
-        self._value_optimizer = torch.optim.Adam(self._actor.parameters(), lr=critic_lr)
+        self._value_optimizer = torch.optim.Adam(self._value_net.parameters(), lr=critic_lr)
         self._critic1_optimizer = torch.optim.Adam(self._critic1.parameters(), lr=critic_lr)
         self._critic2_optimizer = torch.optim.Adam(self._critic2.parameters(), lr=critic_lr)
+
+    def rollout(self, num_rollouts):
+        rewards = np.zeros(num_rollouts)
+        for i in range(num_rollouts):
+            env = self._env_fn()
+            s = env.reset()
+            episode_reward = 0
+            done = False
+            while not done:
+                s_t = torch.from_numpy(s).float().to(device).unsqueeze(0)
+                a, _ = self._actor(s_t)
+                a = a.squeeze().detach().cpu().numpy()
+                if self._discrete_actions:
+                    a = int(a.item())
+                s, r, done, _ = env.step(a)
+                episode_reward += r
+            rewards[i] = episode_reward
+        return rewards
 
     def train(self, num_steps, win_condition=None, win_window=5, visualizer=None):
         env = self._env_fn()
@@ -58,15 +94,20 @@ class SACAgent:
             scores = [0. for _ in range(win_window)]
             idx = 0
         for i in range(num_steps):
-            s_t = torch.FloatTensor(s).to(device).unsqueeze(0)
+            s_t = torch.from_numpy(s).float().to(device).unsqueeze(0)
             if self._training:
                 a, _ = self._actor(s_t)
                 a = a.squeeze().detach().cpu().numpy()
+                if self._discrete_actions:
+                    a = int(a.item())
             else:
                 a = env.action_space.sample()
             ns, r, d, _ = env.step(a)
             episode_reward += r
-            self._replay_buf.store(s, a, r, ns, d)
+            if self._discrete_actions:
+                self._replay_buf.store(s, np.eye(self._act_dim)[int(a)], r, ns, d)
+            else:
+                self._replay_buf.store(s, a, r, ns, d)
             self._total_steps += 1
             if not self._training:
                 if self._total_steps >= self._pre_train_steps:
@@ -104,13 +145,15 @@ class SACAgent:
 
     def update(self):
         s, a, r, ns, d = self._replay_buf.sample(self._batch_size)
-        s = torch.FloatTensor(s).to(device)
-        a = torch.FloatTensor(a).to(device)
-        r = torch.FloatTensor(r).to(device)
-        ns = torch.FloatTensor(ns).to(device)
-        d = torch.FloatTensor(d).to(device)
+        s = torch.from_numpy(s).float().to(device)
+        a = torch.from_numpy(a).float().to(device)
+        r = torch.from_numpy(r).float().to(device)
+        ns = torch.from_numpy(ns).float().to(device)
+        d = torch.from_numpy(d).float().to(device)
 
         sampled_actions, log_probs = self._actor(s)
+        if self._discrete_actions:
+            sampled_actions = torch.eye(self._act_dim)[sampled_actions.long()]
         sampled_q1 = self._critic1(s, sampled_actions).squeeze()
         sampled_q2 = self._critic2(s, sampled_actions).squeeze()
         sampled_q = torch.min(sampled_q1, sampled_q2)
@@ -129,10 +172,10 @@ class SACAgent:
         critic1_loss = F.mse_loss(q1, target_q)
         critic2_loss = F.mse_loss(q2, target_q)
         self._critic1_optimizer.zero_grad()
-        self._critic2_optimizer.zero_grad()
         critic1_loss.backward()
-        critic2_loss.backward()
         self._critic1_optimizer.step()
+        self._critic2_optimizer.zero_grad()
+        critic2_loss.backward()
         self._critic2_optimizer.step()
 
         actor_loss = (log_probs - sampled_q).mean()
@@ -151,6 +194,9 @@ class SACAgent:
         }
 
     def action(self, x):
-        x = torch.FloatTensor(x).to(device)
-        action = self._actor(x)
-        return action[0].squeeze().detach().cpu().numpy()
+        x = torch.from_numpy(x).float().to(device)
+        action, _ = self._actor(x)
+        action = action.squeeze().detach().cpu().numpy()
+        if self._discrete_actions:
+            return int(action.item())
+        return action
