@@ -6,7 +6,7 @@ setup(
     author='Harley Wiltzer',
     author_email='harley.wiltzer@mail.mcgill.ca',
     description='Implementation of Soft Actor Critic',
-    license='GPL',
+    license='MIT',
     keywords='reinforcement learning soft actor critic',
     packages=['sac']
 )
