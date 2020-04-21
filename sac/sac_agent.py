@@ -14,6 +14,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class SACAgent:
     def __init__(self,
                  env,
+                 env_kwargs=None,
                  pre_train_steps=1000,
                  max_replay_capacity=10000,
                  actor_lr=3e-4,
@@ -26,7 +27,10 @@ class SACAgent:
                  value_delay=1):
         self._total_steps = 0
         self._env_name = env
-        self._env_fn = lambda: gym.make(self._env_name)
+        if env_kwargs is None:
+            self._env_fn = lambda: gym.make(self._env_name)
+        else:
+            self._env_fn = lambda: gym.make(self._env_name, **env_kwargs)
         self._tau = tau
         self._gamma = gamma
         self._batch_size = batch_size
