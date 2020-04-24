@@ -20,9 +20,9 @@ class ValueNetwork(nn.Module):
         self._input_dim = input_dim
 
     def forward(self, x):
-        x1 = F.relu(self._l1(x))
-        x2 = F.relu(self._l2(x1))
-        return self._l3(x2)
+        x1 = F.relu(self._l1(x.clone()))
+        x2 = F.relu(self._l2(x1.clone()))
+        return self._l3(x2.clone())
 
     def exponential_smooth(self, other, tau):
         for (self_p, other_p) in zip(self.parameters(), other.parameters()):
@@ -46,9 +46,9 @@ class DiscreteCriticNetwork(nn.Module):
         self._l3 = nn.Linear(hidden_size, act_dim)
 
     def forward(self, s, a):
-        s1 = F.relu(self._l1(s))
-        s2 = F.relu(self._l2(s1))
-        s3 = self._l3(s2)
+        s1 = F.relu(self._l1(s.clone()))
+        s2 = F.relu(self._l2(s1.clone()))
+        s3 = self._l3(s2.clone())
         return s3.gather(1, a.long())
 
 class ActorNetwork(nn.Module):
@@ -60,8 +60,8 @@ class ActorNetwork(nn.Module):
         self._hidden_size = hidden_size
 
     def forward(self, x):
-        x1 = F.relu(self._l1(x))
-        x2 = F.relu(self._l2(x1))
+        x1 = F.relu(self._l1(x.clone()))
+        x2 = F.relu(self._l2(x1.clone()))
         return x2
 
     def policy(self, x):
@@ -90,13 +90,13 @@ class GaussianActorNetwork(ActorNetwork):
         ]
 
     def forward(self, x):
-        dist = self.policy(x)
+        dist = self.policy(x.clone())
         action = dist.rsample() # Reparameterization trick
         logprobs = dist.log_prob(action)
         return action, logprobs
 
     def policy(self, x):
-        logits = ActorNetwork.forward(self, x)
+        logits = ActorNetwork.forward(self, x.clone())
         mean = self._mean_layer(logits)
         log_std = self._std_layer(logits).clamp(self._log_std_min, self._log_std_max)
         std = torch.diag_embed(log_std.exp())
@@ -116,13 +116,13 @@ class DiscreteActorNetwork(ActorNetwork):
         self._action_indices = torch.arange(act_dim).float().t()
 
     def forward(self, x):
-        dist = self.policy(x)
+        dist = self.policy(x.clone())
         one_hot_action = F.gumbel_softmax(dist.logits, tau=self._temperature, hard=True)
         action = one_hot_action @ self._action_indices
         logprobs = dist.log_prob(action)
         return action.unsqueeze(-1), logprobs
 
     def policy(self, x):
-        x1 = ActorNetwork.forward(self, x)
+        x1 = ActorNetwork.forward(self, x.clone())
         logits = self._logits_layer(x1)
         return Categorical(logits=logits)
