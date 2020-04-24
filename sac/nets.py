@@ -22,8 +22,7 @@ class ValueNetwork(nn.Module):
     def forward(self, x):
         x = F.relu(self._l1(x))
         x = F.relu(self._l2(x))
-        x = self._l3(x.clone())
-        return x
+        return self._l3(x.clone())
 
     def exponential_smooth(self, other, tau):
         for (self_p, other_p) in zip(self.parameters(), other.parameters()):
@@ -49,8 +48,8 @@ class DiscreteCriticNetwork(nn.Module):
     def forward(self, s, a):
         s = F.relu(self._l1(s))
         s = F.relu(self._l2(s))
-        s = self._l3(s.clone())
-        return s.gather(1, a.long())
+        out = self._l3(s.clone())
+        return out.gather(1, a.long())
 
 class ActorNetwork(nn.Module):
     def __init__(self, obs_dim, hidden_size=256):
