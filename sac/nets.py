@@ -8,6 +8,8 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.distributions.transformed_distribution import TransformedDistribution
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 class ValueNetwork(nn.Module):
     def __init__(self, input_dim, hidden_size=256):
         super(ValueNetwork, self).__init__()
@@ -80,8 +82,8 @@ class GaussianActorNetwork(ActorNetwork):
         self._act_dim = act_dim
         self._log_std_min = log_std_min
         self._log_std_max = log_std_max
-        act_scale = torch.FloatTensor(act_high - act_low)
-        act_low = torch.FloatTensor(act_low)
+        act_scale = torch.FloatTensor(act_high - act_low).to(device)
+        act_low = torch.FloatTensor(act_low).to(device)
         self._transforms = [
             SigmoidTransform(),
             AffineTransform(loc=act_low, scale=act_scale)
