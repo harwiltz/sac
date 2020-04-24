@@ -76,8 +76,10 @@ class SACAgent:
 
         self._actor_optimizer = torch.optim.Adam(self._actor.parameters(), lr=actor_lr)
         self._value_optimizer = torch.optim.Adam(self._value_net.parameters(), lr=critic_lr)
-        self._critic1_optimizer = torch.optim.Adam(self._critic1.parameters(), lr=critic_lr)
-        self._critic2_optimizer = torch.optim.Adam(self._critic2.parameters(), lr=critic_lr)
+        self._critic_optimizer = torch.optim.Adam(
+                list(self._critic1.parameters()) + list(self._critic2.parameters()),
+                lr=critic_lr
+        )
 
     def rollout(self, num_rollouts=1, render=False):
         rewards = np.zeros(num_rollouts)
@@ -164,9 +166,6 @@ class SACAgent:
         values = (self._value_net(s)).squeeze()
         value_targets = (sampled_q - log_probs).squeeze()
         value_loss = F.mse_loss(values, value_targets.detach())
-        self._value_optimizer.zero_grad()
-        value_loss.backward()
-        self._value_optimizer.step()
 
         q1 = self._critic1(s, a)
         q2 = self._critic2(s, a)
@@ -174,17 +173,21 @@ class SACAgent:
             target_q = r + (1.0 - d) * self._gamma * self._target_value_net(ns)
         critic1_loss = F.mse_loss(q1, target_q)
         critic2_loss = F.mse_loss(q2, target_q)
-        self._critic1_optimizer.zero_grad()
-        critic1_loss.backward()
-        self._critic1_optimizer.step()
-        self._critic2_optimizer.zero_grad()
-        critic2_loss.backward()
-        self._critic2_optimizer.step()
+        critic_loss = critic1_loss + critic2_loss
 
         actor_loss = (log_probs - sampled_q).mean()
+
         self._actor_optimizer.zero_grad()
         actor_loss.backward()
         self._actor_optimizer.step()
+
+        self._critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self._critic_optimizer.step()
+
+        self._value_optimizer.zero_grad()
+        value_loss.backward()
+        self._value_optimizer.step()
 
         if self._total_steps % self._value_delay == 0:
             self._target_value_net.exponential_smooth(self._value_net, self._tau)
