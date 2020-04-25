@@ -20,9 +20,9 @@ class ValueNetwork(nn.Module):
         self._input_dim = input_dim
 
     def forward(self, x):
-        x1 = F.relu(self._l1(x.clone()))
-        x2 = F.relu(self._l2(x1.clone()))
-        return self._l3(x2.clone())
+        x1 = F.relu(self._l1(x).clone())
+        x2 = F.relu(self._l2(x1))
+        return self._l3(x2)
 
     def exponential_smooth(self, other, tau):
         for (self_p, other_p) in zip(self.parameters(), other.parameters()):
@@ -35,7 +35,7 @@ class CriticNetwork(ValueNetwork):
         self._act_dim = act_dim
 
     def forward(self, s, a):
-        x = torch.cat([s, a], dim=1)
+        x = torch.cat([s.clone(), a.clone()], dim=1)
         return ValueNetwork.forward(self, x)
 
 class DiscreteCriticNetwork(nn.Module):
@@ -46,9 +46,9 @@ class DiscreteCriticNetwork(nn.Module):
         self._l3 = nn.Linear(hidden_size, act_dim)
 
     def forward(self, s, a):
-        s1 = F.relu(self._l1(s.clone()))
-        s2 = F.relu(self._l2(s1.clone()))
-        s3 = self._l3(s2.clone())
+        s1 = F.relu(self._l1(s).clone())
+        s2 = F.relu(self._l2(s1))
+        s3 = self._l3(s2)
         return s3.gather(1, a.long())
 
 class ActorNetwork(nn.Module):
@@ -60,8 +60,8 @@ class ActorNetwork(nn.Module):
         self._hidden_size = hidden_size
 
     def forward(self, x):
-        x1 = F.relu(self._l1(x.clone()))
-        x2 = F.relu(self._l2(x1.clone()))
+        x1 = F.relu(self._l1(x).clone())
+        x2 = F.relu(self._l2(x1))
         return x2
 
     def policy(self, x):
