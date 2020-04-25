@@ -9,7 +9,7 @@ from sac.nets import CriticNetwork, DiscreteCriticNetwork, ValueNetwork
 from sac.replay import ReplayBuffer
 from sac.utils import default_cli_logger
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 
 class SACAgent:
     def __init__(self,

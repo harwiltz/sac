@@ -8,7 +8,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.distributions.transformed_distribution import TransformedDistribution
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu' if torch.cuda.is_available() else 'cpu')
 torch.autograd.set_detect_anomaly(True)
 
 class ValueNetwork(nn.Module):
